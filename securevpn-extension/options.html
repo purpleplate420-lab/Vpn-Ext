@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>SecureVPN Options</title>
+	<link rel="stylesheet" href="options.css" />
+</head>
+<body>
+	<div class="container">
+		<header>
+			<h1>SecureVPN — Servers</h1>
+			<p class="subtitle">Add, edit, or remove proxy servers.</p>
+		</header>
+		<main>
+			<table id="serverTable">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Type</th>
+						<th>Host</th>
+						<th>Port</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody></tbody>
+			</table>
+			<h2>Add server</h2>
+			<form id="addForm">
+				<input type="text" id="name" placeholder="Name" required />
+				<select id="type">
+					<option value="http">HTTP</option>
+					<option value="socks5">SOCKS5</option>
+				</select>
+				<input type="text" id="host" placeholder="host.example.com" required />
+				<input type="number" id="port" placeholder="8080" required />
+				<button type="submit">Add</button>
+			</form>
+		</main>
+	</div>
+	<script src="options.js"></script>
+</body>
+</html>

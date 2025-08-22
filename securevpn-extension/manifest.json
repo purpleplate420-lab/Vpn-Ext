@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "SecureVPN",
+  "version": "1.0.0",
+  "description": "Lightweight privacy extension with one-click proxy connect, region selection, and custom servers.",
+  "minimum_chrome_version": "114",
+  "action": {
+    "default_title": "SecureVPN",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "permissions": [
+    "storage",
+    "proxy",
+    "notifications"
+  ]
+}
