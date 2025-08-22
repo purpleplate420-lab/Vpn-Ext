@@ -24,6 +24,12 @@ async function getConfig() {
 	return { backendBaseUrl: res.backendBaseUrl };
 }
 
+function setAuthError(msg) {
+	const errEl = document.getElementById('authError');
+	if (!errEl) return;
+	errEl.textContent = msg || '';
+}
+
 function renderServers(servers, selectedId) {
 	const select = document.getElementById('regionSelect');
 	select.innerHTML = '';
@@ -92,28 +98,36 @@ async function refreshFromStorage() {
 }
 
 async function loginWithGoogle() {
+	setAuthError('');
 	const { backendBaseUrl } = await getConfig();
 	const redirectUrl = chrome.identity.getRedirectURL('securevpn');
 	const startUrl = `${backendBaseUrl.replace(/\/$/, '')}/auth/google/start?redirect_uri=${encodeURIComponent(redirectUrl)}`;
-	const responseUrl = await new Promise((resolve, reject) => {
-		chrome.identity.launchWebAuthFlow({ url: startUrl, interactive: true }, (redirectedTo) => {
-			if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-			if (!redirectedTo) return reject(new Error('No response'));
-			resolve(redirectedTo);
+	try {
+		const responseUrl = await new Promise((resolve, reject) => {
+			chrome.identity.launchWebAuthFlow({ url: startUrl, interactive: true }, (redirectedTo) => {
+				if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+				if (!redirectedTo) return reject(new Error('No response'));
+				resolve(redirectedTo);
+			});
 		});
-	});
-	const u = new URL(responseUrl);
-	const params = new URLSearchParams(u.hash.replace(/^#/, ''));
-	const token = params.get('token');
-	const email = params.get('email');
-	if (!token) throw new Error('No token received');
-	await chrome.storage.local.set({ [STORAGE_KEYS.authToken]: token, [STORAGE_KEYS.userEmail]: email });
-	await sendMessage({ type: 'syncAfterLogin' });
-	await refreshFromStorage();
+		const u = new URL(responseUrl);
+		const params = new URLSearchParams(u.hash.replace(/^#/, ''));
+		const token = params.get('token');
+		const email = params.get('email');
+		if (!token) throw new Error('No token received from backend');
+		await chrome.storage.local.set({ [STORAGE_KEYS.authToken]: token, [STORAGE_KEYS.userEmail]: email });
+		await sendMessage({ type: 'syncAfterLogin' });
+		await refreshFromStorage();
+	} catch (e) {
+		console.error('Google login failed:', e);
+		const msg = String(e?.message || e);
+		setAuthError(msg.includes('The user did not approve') ? 'Sign-in cancelled.' : msg);
+	}
 }
 
 async function logout() {
 	await chrome.storage.local.set({ [STORAGE_KEYS.authToken]: undefined, [STORAGE_KEYS.userEmail]: undefined });
+	setAuthError('');
 	await refreshFromStorage();
 }
 
@@ -127,12 +141,8 @@ async function init() {
 		renderConnectionState(Boolean(updated.isConnected));
 	});
 
-	document.getElementById('googleLoginBtn').addEventListener('click', async () => {
-		try { await loginWithGoogle(); } catch (e) { /* ignore */ }
-	});
-	document.getElementById('logoutBtn').addEventListener('click', async () => {
-		await logout();
-	});
+	document.getElementById('googleLoginBtn').addEventListener('click', loginWithGoogle);
+	document.getElementById('logoutBtn').addEventListener('click', logout);
 
 	chrome.storage.onChanged.addListener((changes, areaName) => {
 		if (areaName !== 'local') return;
