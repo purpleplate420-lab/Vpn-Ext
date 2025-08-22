@@ -55,16 +55,27 @@ async function handleConnectClick() {
 	renderConnectionState(Boolean(newState.isConnected));
 }
 
-async function init() {
+async function refreshFromStorage() {
 	const state = await loadState();
 	renderServers(state.servers || [], state.selectedServerId);
 	renderConnectionState(Boolean(state.isConnected));
+}
+
+async function init() {
+	await refreshFromStorage();
 
 	document.getElementById('connectBtn').addEventListener('click', handleConnectClick);
 	document.getElementById('regionSelect').addEventListener('change', async (e) => {
 		await sendMessage({ type: 'connect', serverId: e.target.value });
 		const updated = await loadState();
 		renderConnectionState(Boolean(updated.isConnected));
+	});
+
+	chrome.storage.onChanged.addListener((changes, areaName) => {
+		if (areaName !== 'local') return;
+		if (changes.servers || changes.selectedServerId || changes.isConnected) {
+			refreshFromStorage();
+		}
 	});
 }
 

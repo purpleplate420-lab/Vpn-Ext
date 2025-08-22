@@ -167,8 +167,31 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'saveServers') {
         const { servers } = message;
         if (!Array.isArray(servers)) throw new Error('Invalid servers');
+
+        const current = await getStorage([STORAGE_KEYS.selectedServerId, STORAGE_KEYS.isConnected]);
+        const currentSelectedId = current[STORAGE_KEYS.selectedServerId];
+        const isConnected = Boolean(current[STORAGE_KEYS.isConnected]);
+
         await setStorage({ [STORAGE_KEYS.servers]: servers });
-        sendResponse({ ok: true });
+
+        let nextSelectedId = currentSelectedId;
+        const hasSelected = servers.some((s) => s.id === currentSelectedId);
+        if (!hasSelected) {
+          nextSelectedId = servers.length > 0 ? servers[0].id : undefined;
+        }
+
+        if (nextSelectedId) {
+          await setStorage({ [STORAGE_KEYS.selectedServerId]: nextSelectedId });
+          if (isConnected) {
+            await applyProxyForServerId(nextSelectedId);
+          }
+        } else {
+          await setStorage({ [STORAGE_KEYS.isConnected]: false, [STORAGE_KEYS.selectedServerId]: undefined });
+          await clearProxy();
+          setBadgeConnected(false);
+        }
+
+        sendResponse({ ok: true, selectedServerId: nextSelectedId || null });
         return;
       }
 
