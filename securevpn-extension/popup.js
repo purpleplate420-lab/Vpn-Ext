@@ -3,7 +3,9 @@
 const STORAGE_KEYS = {
 	servers: "servers",
 	selectedServerId: "selectedServerId",
-	isConnected: "isConnected"
+	isConnected: "isConnected",
+	authToken: "authToken",
+	userEmail: "userEmail"
 };
 
 function sendMessage(message) {
@@ -14,6 +16,12 @@ async function loadState() {
 	const res = await sendMessage({ type: 'getState' });
 	if (!res?.ok) throw new Error(res?.error || 'Failed to load state');
 	return res.state;
+}
+
+async function getConfig() {
+	const res = await sendMessage({ type: 'getConfig' });
+	if (!res?.ok) throw new Error(res?.error || 'Failed to load config');
+	return { backendBaseUrl: res.backendBaseUrl };
 }
 
 function renderServers(servers, selectedId) {
@@ -42,6 +50,24 @@ function renderConnectionState(isConnected) {
 	}
 }
 
+function toggleViews(isAuthed, email) {
+	const authView = document.getElementById('authView');
+	const mainView = document.getElementById('mainView');
+	const userInfo = document.getElementById('userInfo');
+	const logoutBtn = document.getElementById('logoutBtn');
+	if (isAuthed) {
+		authView.hidden = true;
+		mainView.hidden = false;
+		logoutBtn.hidden = false;
+		userInfo.textContent = email || '';
+	} else {
+		mainView.hidden = true;
+		authView.hidden = false;
+		logoutBtn.hidden = true;
+		userInfo.textContent = '';
+	}
+}
+
 async function handleConnectClick() {
 	const select = document.getElementById('regionSelect');
 	const serverId = select.value;
@@ -57,8 +83,38 @@ async function handleConnectClick() {
 
 async function refreshFromStorage() {
 	const state = await loadState();
-	renderServers(state.servers || [], state.selectedServerId);
-	renderConnectionState(Boolean(state.isConnected));
+	const isAuthed = Boolean(state.authToken);
+	toggleViews(isAuthed, state.userEmail);
+	if (isAuthed) {
+		renderServers(state.servers || [], state.selectedServerId);
+		renderConnectionState(Boolean(state.isConnected));
+	}
+}
+
+async function loginWithGoogle() {
+	const { backendBaseUrl } = await getConfig();
+	const redirectUrl = chrome.identity.getRedirectURL('securevpn');
+	const startUrl = `${backendBaseUrl.replace(/\/$/, '')}/auth/google/start?redirect_uri=${encodeURIComponent(redirectUrl)}`;
+	const responseUrl = await new Promise((resolve, reject) => {
+		chrome.identity.launchWebAuthFlow({ url: startUrl, interactive: true }, (redirectedTo) => {
+			if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+			if (!redirectedTo) return reject(new Error('No response'));
+			resolve(redirectedTo);
+		});
+	});
+	const u = new URL(responseUrl);
+	const params = new URLSearchParams(u.hash.replace(/^#/, ''));
+	const token = params.get('token');
+	const email = params.get('email');
+	if (!token) throw new Error('No token received');
+	await chrome.storage.local.set({ [STORAGE_KEYS.authToken]: token, [STORAGE_KEYS.userEmail]: email });
+	await sendMessage({ type: 'syncAfterLogin' });
+	await refreshFromStorage();
+}
+
+async function logout() {
+	await chrome.storage.local.set({ [STORAGE_KEYS.authToken]: undefined, [STORAGE_KEYS.userEmail]: undefined });
+	await refreshFromStorage();
 }
 
 async function init() {
@@ -71,9 +127,16 @@ async function init() {
 		renderConnectionState(Boolean(updated.isConnected));
 	});
 
+	document.getElementById('googleLoginBtn').addEventListener('click', async () => {
+		try { await loginWithGoogle(); } catch (e) { /* ignore */ }
+	});
+	document.getElementById('logoutBtn').addEventListener('click', async () => {
+		await logout();
+	});
+
 	chrome.storage.onChanged.addListener((changes, areaName) => {
 		if (areaName !== 'local') return;
-		if (changes.servers || changes.selectedServerId || changes.isConnected) {
+		if (changes.servers || changes.selectedServerId || changes.isConnected || changes.authToken || changes.userEmail) {
 			refreshFromStorage();
 		}
 	});

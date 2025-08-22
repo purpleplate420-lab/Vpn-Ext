@@ -12,15 +12,24 @@
 			<img src="icon-128.png" alt="SecureVPN" class="logo" />
 			<h1>SecureVPN</h1>
 		</header>
-		<main>
-			<label class="server-label" for="regionSelect">Select region</label>
-			<select id="regionSelect"></select>
-			<button id="connectBtn" class="connect">Connect</button>
-			<p id="statusText" class="status">Disconnected</p>
-		</main>
-		<footer>
-			<a href="options.html" target="_blank">Manage servers</a>
-		</footer>
+		<div id="authView" class="auth" hidden>
+			<p class="welcome">Keep your browsing private. Sign in to sync servers.</p>
+			<button id="googleLoginBtn" class="google">Continue with Google</button>
+		</div>
+		<div id="mainView">
+			<main>
+				<label class="server-label" for="regionSelect">Select region</label>
+				<select id="regionSelect"></select>
+				<button id="connectBtn" class="connect">Connect</button>
+				<p id="statusText" class="status">Disconnected</p>
+			</main>
+			<footer>
+				<a href="options.html" target="_blank">Manage servers</a>
+				<span class="spacer"></span>
+				<span id="userInfo" class="user"></span>
+				<button id="logoutBtn" class="link" hidden>Logout</button>
+			</footer>
+		</div>
 	</div>
 	<script src="popup.js"></script>
 </body>

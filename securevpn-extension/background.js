@@ -17,10 +17,14 @@ const DEFAULT_SERVERS = [
   }
 ];
 
+const BACKEND_BASE_URL = 'http://localhost:4000';
+
 const STORAGE_KEYS = {
   servers: "servers",
   selectedServerId: "selectedServerId",
-  isConnected: "isConnected"
+  isConnected: "isConnected",
+  authToken: "authToken",
+  userEmail: "userEmail"
 };
 
 async function getStorage(keys) {
@@ -121,9 +125,28 @@ function notify(title, message) {
       title,
       message
     });
-  } catch (e) {
-    // notifications may not be available in all contexts; ignore errors
-  }
+  } catch (e) {}
+}
+
+async function fetchBackend(pathname, options = {}) {
+  const base = BACKEND_BASE_URL.replace(/\/$/, '');
+  const url = `${base}${pathname}`;
+  const { authToken } = await getStorage([STORAGE_KEYS.authToken]);
+  const headers = new Headers(options.headers || {});
+  if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+  headers.set('Content-Type', 'application/json');
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) throw new Error(`Backend ${res.status}`);
+  return res.json();
+}
+
+async function pullServersFromBackend() {
+  const data = await fetchBackend('/servers', { method: 'GET' });
+  return Array.isArray(data.servers) ? data.servers : [];
+}
+
+async function pushServersToBackend(servers) {
+  await fetchBackend('/servers', { method: 'PUT', body: JSON.stringify({ servers }) });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -138,8 +161,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
       if (message?.type === 'getState') {
-        const state = await getStorage([STORAGE_KEYS.servers, STORAGE_KEYS.selectedServerId, STORAGE_KEYS.isConnected]);
+        const state = await getStorage([STORAGE_KEYS.servers, STORAGE_KEYS.selectedServerId, STORAGE_KEYS.isConnected, STORAGE_KEYS.authToken, STORAGE_KEYS.userEmail]);
         sendResponse({ ok: true, state });
+        return;
+      }
+
+      if (message?.type === 'getConfig') {
+        sendResponse({ ok: true, backendBaseUrl: BACKEND_BASE_URL });
         return;
       }
 
@@ -168,7 +196,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const { servers } = message;
         if (!Array.isArray(servers)) throw new Error('Invalid servers');
 
-        const current = await getStorage([STORAGE_KEYS.selectedServerId, STORAGE_KEYS.isConnected]);
+        const current = await getStorage([STORAGE_KEYS.selectedServerId, STORAGE_KEYS.isConnected, STORAGE_KEYS.authToken]);
         const currentSelectedId = current[STORAGE_KEYS.selectedServerId];
         const isConnected = Boolean(current[STORAGE_KEYS.isConnected]);
 
@@ -191,7 +219,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           setBadgeConnected(false);
         }
 
+        // best-effort push to backend if logged in
+        if (current[STORAGE_KEYS.authToken]) {
+          try { await pushServersToBackend(servers); } catch (e) {}
+        }
+
         sendResponse({ ok: true, selectedServerId: nextSelectedId || null });
+        return;
+      }
+
+      if (message?.type === 'syncAfterLogin') {
+        const [{ servers: localServers }, { authToken }] = await Promise.all([
+          getStorage([STORAGE_KEYS.servers]),
+          getStorage([STORAGE_KEYS.authToken])
+        ]);
+        if (!authToken) {
+          sendResponse({ ok: false, error: 'Not authenticated' });
+          return;
+        }
+        try {
+          const remote = await pullServersFromBackend();
+          if (Array.isArray(remote) && remote.length > 0) {
+            await setStorage({ [STORAGE_KEYS.servers]: remote });
+          } else if (Array.isArray(localServers) && localServers.length > 0) {
+            await pushServersToBackend(localServers);
+          }
+          sendResponse({ ok: true });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
         return;
       }
 
